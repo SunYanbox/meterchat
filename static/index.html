@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';">
+  <title>MeterChat</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar">
+      <div id="search-container">
+        <input type="text" id="search-input" placeholder="Search conversations...">
+      </div>
+      <nav id="folder-tree"></nav>
+      <div id="sidebar-footer">
+        <button id="new-conversation-btn">+ New Conversation</button>
+        <button id="settings-btn">Settings</button>
+        <button id="dashboard-btn">Dashboard</button>
+      </div>
+    </aside>
+    <main id="main-content">
+      <div id="conversation-view">
+        <div id="conversation-header">
+          <h2 id="conversation-title" contenteditable="false">Conversation</h2>
+          <div id="branch-switcher">
+            <button id="branch-switcher-btn">Branches ▾</button>
+            <div id="branch-dropdown"></div>
+          </div>
+        </div>
+        <div id="system-prompt-banner"></div>
+        <div id="message-list"></div>
+        <div class="token-summary"></div>
+        <div id="input-area">
+          <textarea id="message-input" placeholder="Type your message..." rows="3"></textarea>
+          <button id="send-btn">Send</button>
+        </div>
+      </div>
+      <div id="new-conversation-view" class="hidden">
+        <div id="new-conversation-form">
+          <label for="system-prompt-input">System Prompt</label>
+          <textarea id="system-prompt-input" rows="4">You are a helpful assistant.</textarea>
+          <label for="first-message-input">Message</label>
+          <textarea id="first-message-input" rows="4" placeholder="Type your first message..."></textarea>
+          <button id="start-conversation-btn">Start Conversation</button>
+        </div>
+      </div>
+      <div id="dashboard-view" class="hidden">
+        <div id="dashboard-header">
+          <h2>Dashboard</h2>
+          <button id="back-to-conversation-btn">Back to Conversation</button>
+        </div>
+        <div id="dashboard-stats"></div>
+        <div id="dashboard-charts">
+          <div class="chart-container"><canvas id="pie-chart"></canvas></div>
+          <div class="chart-container"><canvas id="line-chart"></canvas></div>
+        </div>
+        <div id="dashboard-details"></div>
+      </div>
+    </main>
+  </div>
+  <script src="../dist/src/renderer.js"></script>
+</body>
+</html>
