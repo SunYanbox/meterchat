@@ -26,7 +26,7 @@ function createWindow(): void {
     title: 'MeterChat',
   });
 
-  mainWindow.loadFile(path.join(__dirname, '..', 'static', 'index.html'));
+  mainWindow.loadFile(path.join(__dirname, '..', '..', 'static', 'index.html'));
 
   mainWindow.on('closed', () => {
     mainWindow = null;
