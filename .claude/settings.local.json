@@ -10,7 +10,11 @@
       "Skill(superpowers:test-driven-development)",
       "Bash(npm install *)",
       "Bash(git add *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(git *)",
+      "Bash(npx tsc *)",
+      "Bash(npx jest *)",
+      "Bash(npm *)"
     ]
   }
 }
