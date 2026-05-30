@@ -222,36 +222,157 @@ export class ConversationView {
       created_at: now,
     });
 
-    // Simulate response (API integration will replace this)
-    this.simulateResponse();
+    // Call API instead of simulating
+    this.callApi();
   }
 
-  private async simulateResponse(): Promise<void> {
+  private async callApi(): Promise<void> {
     if (!currentConvId || !currentBranchId) return;
 
-    const lastMsg = (await db()?.get(
-      'SELECT * FROM messages WHERE conversation_id = ? AND branch_id = ? ORDER BY created_at DESC LIMIT 1',
-      [currentConvId, currentBranchId]
-    ));
+    const api = () => (window as any).electronAPI?.api;
+    const encrypt = () => (window as any).electronAPI?.encrypt;
 
-    const msgId = crypto.randomUUID();
+    // Get conversation info
+    const conv = await db()?.get('SELECT * FROM conversations WHERE id = ?', [currentConvId]);
+    if (!conv) return;
+
+    // Get first enabled provider with API key
+    const provider = await db()?.get(`
+      SELECT p.*, pk.default_model, pk.default_temperature, pk.api_key as encrypted_key
+      FROM providers p
+      JOIN provider_keys pk ON pk.provider_id = p.id
+      WHERE p.is_enabled = 1
+      LIMIT 1
+    `);
+
+    if (!provider || !encrypt()) {
+      this.fallbackResponse();
+      return;
+    }
+
+    // Decrypt API key
+    let apiKey: string;
+    try {
+      apiKey = await encrypt()!.decrypt(provider.encrypted_key);
+    } catch {
+      this.fallbackResponse();
+      return;
+    }
+
+    // Get messages in current branch
+    const messages = await db()?.getAll(
+      'SELECT * FROM messages WHERE conversation_id = ? AND branch_id = ? ORDER BY created_at ASC',
+      [currentConvId, currentBranchId]
+    );
+    if (!messages || messages.length === 0) return;
+
+    // Create assistant message placeholder
+    const assistantMsgId = crypto.randomUUID();
     const now = new Date().toISOString();
-    const simulatedContent = 'This is a simulated response. API integration will be added in a future phase.';
+    const lastMsg = messages[messages.length - 1];
 
     await db()?.execute(
       'INSERT INTO messages (id, conversation_id, role, content, model, parent_id, branch_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [msgId, currentConvId, 'assistant', simulatedContent, 'simulated', lastMsg?.id || null, currentBranchId, now]
+      [assistantMsgId, currentConvId, 'assistant', '', provider.default_model || 'deepseek-chat', lastMsg?.id || null, currentBranchId, now]
+    );
+
+    // Render placeholder
+    const msgList = document.getElementById('message-list');
+    const assistantDiv = document.createElement('div');
+    assistantDiv.className = 'message assistant';
+    assistantDiv.dataset.messageId = assistantMsgId;
+    assistantDiv.innerHTML = `<div class="message-header"><span>${provider.default_model || 'Assistant'}</span></div><div class="message-content"></div>`;
+    msgList?.appendChild(assistantDiv);
+    msgList!.scrollTop = msgList!.scrollHeight;
+
+    const contentDiv = assistantDiv.querySelector('.message-content') as HTMLElement;
+    let accumulated = '';
+
+    // Build request body
+    const apiMessages = messages.map((m: any) => ({ role: m.role, content: m.content }));
+    const body = {
+      model: provider.default_model || 'deepseek-chat',
+      messages: [
+        { role: 'system', content: conv.system_prompt },
+        ...apiMessages,
+      ],
+      temperature: provider.default_temperature ?? 0.7,
+      stream: true,
+    };
+
+    // Call API with streaming
+    api()!.send(
+      { baseUrl: provider.base_url, apiKey, body },
+      {
+        onChunk: (text: string) => {
+          accumulated += text;
+          if (contentDiv) contentDiv.textContent = accumulated;
+          msgList!.scrollTop = msgList!.scrollHeight;
+        },
+        onDone: async (usage: any) => {
+          // Update message with final content
+          await db()?.execute(
+            'UPDATE messages SET content = ? WHERE id = ?',
+            [accumulated, assistantMsgId]
+          );
+
+          // Save token usage
+          if (usage && usage.prompt_tokens != null) {
+            await db()?.execute(
+              'INSERT INTO token_usage (id, message_id, conversation_id, model, prompt_tokens, completion_tokens, prompt_cache_hit_tokens, prompt_cache_miss_tokens, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+              [
+                crypto.randomUUID(), assistantMsgId, currentConvId,
+                provider.default_model || 'deepseek-chat',
+                usage.prompt_tokens || 0, usage.completion_tokens || 0,
+                usage.prompt_cache_hit_tokens || 0, usage.prompt_cache_miss_tokens || 0,
+                new Date().toISOString(),
+              ]
+            );
+          }
+
+          // Update header with model name
+          const headerSpan = assistantDiv.querySelector('.message-header span');
+          if (headerSpan) headerSpan.textContent = provider.default_model || 'Assistant';
+
+          await this.renderBranchSwitcher();
+          await this.renderTokenSummary();
+        },
+        onError: (err: any) => {
+          if (contentDiv) {
+            const statusMessages: Record<number, string> = {
+              401: 'API Key is invalid. Check Settings.',
+              403: 'API Key is invalid. Check Settings.',
+              429: 'Too many requests. Try again later.',
+            };
+            contentDiv.textContent = statusMessages[err.status] || `Error: ${err.body || err.message || 'Network error'}`;
+            contentDiv.style.color = 'var(--danger)';
+          }
+        },
+      }
+    );
+  }
+
+  private async fallbackResponse(): Promise<void> {
+    if (!currentConvId || !currentBranchId) return;
+
+    const lastMsg = await db()?.get(
+      'SELECT * FROM messages WHERE conversation_id = ? AND branch_id = ? ORDER BY created_at DESC LIMIT 1',
+      [currentConvId, currentBranchId]
+    );
+
+    const msgId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const fallbackContent = 'No API key configured. Go to Settings to add an API key.';
+
+    await db()?.execute(
+      'INSERT INTO messages (id, conversation_id, role, content, model, parent_id, branch_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [msgId, currentConvId, 'assistant', fallbackContent, 'none', lastMsg?.id || null, currentBranchId, now]
     );
 
     this.renderMessage({
-      id: msgId,
-      conversation_id: currentConvId,
-      role: 'assistant',
-      content: simulatedContent,
-      model: 'simulated',
-      parent_id: lastMsg?.id || null,
-      branch_id: currentBranchId,
-      created_at: now,
+      id: msgId, conversation_id: currentConvId, role: 'assistant',
+      content: fallbackContent, model: 'none',
+      parent_id: lastMsg?.id || null, branch_id: currentBranchId, created_at: new Date().toISOString(),
     });
   }
 

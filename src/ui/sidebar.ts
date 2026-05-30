@@ -11,6 +11,12 @@ export class Sidebar {
   }
 
   async refresh(): Promise<void> {
+    // Wire up new folder button
+    const newFolderBtn = document.getElementById('new-folder-btn');
+    if (newFolderBtn && !newFolderBtn.dataset.wired) {
+      newFolderBtn.dataset.wired = '1';
+      newFolderBtn.onclick = () => this.createNewFolder();
+    }
     const folderTree = document.getElementById('folder-tree');
     if (!folderTree) return;
 
@@ -98,6 +104,7 @@ export class Sidebar {
       e.preventDefault();
       this.showContextMenu(e.clientX, e.clientY, [
         { label: 'Rename', action: () => this.renameConv(conv.id) },
+        { label: 'Move to Folder', action: () => this.moveConv(conv.id) },
         { label: 'Delete', danger: true, action: () => this.deleteConv(conv.id) },
       ]);
     };
@@ -139,6 +146,33 @@ export class Sidebar {
     const title = prompt('Conversation title:');
     if (!title) return;
     await db()?.execute('UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?', [title, new Date().toISOString(), id]);
+    await this.refresh();
+  }
+
+  private async moveConv(id: string): Promise<void> {
+    const folders = (await db()?.getAll('SELECT * FROM folders ORDER BY name ASC')) || [];
+    const choices = ['(Root)'];
+    for (const f of folders) {
+      choices.push(`${f.name} (${f.id.slice(0, 8)})`);
+    }
+    const choice = prompt(`Move to folder:\n${choices.map((c, i) => `${i}: ${c}`).join('\n')}\n\nEnter number:`);
+    if (choice === null) return;
+    const idx = parseInt(choice);
+    if (isNaN(idx) || idx < 0 || idx > folders.length) return;
+    const folderId = idx === 0 ? null : folders[idx - 1].id;
+    await db()?.execute('UPDATE conversations SET folder_id = ?, updated_at = ? WHERE id = ?', [folderId, new Date().toISOString(), id]);
+    await this.refresh();
+  }
+
+  private async createNewFolder(): Promise<void> {
+    const name = prompt('Folder name:');
+    if (!name) return;
+    const folders = (await db()?.getAll('SELECT MAX(sort_order) as max FROM folders')) || [{ max: 0 }];
+    const nextOrder = (folders[0]?.max ?? 0) + 1;
+    await db()?.execute(
+      'INSERT INTO folders (id, name, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+      [crypto.randomUUID(), name, nextOrder, new Date().toISOString(), new Date().toISOString()]
+    );
     await this.refresh();
   }
 

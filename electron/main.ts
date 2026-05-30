@@ -61,6 +61,62 @@ ipcMain.handle('db:getAll', (_event, query: string, params: any[]) => {
   });
 });
 
+// API streaming IPC handler
+ipcMain.handle('api:send', async (event, { baseUrl, apiKey, body }) => {
+  try {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '');
+      event.sender.send('api:error', { status: response.status, body: errorText });
+      return;
+    }
+
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let usage: any = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data: ')) continue;
+        const data = trimmed.slice(6);
+        if (data === '[DONE]') continue;
+        try {
+          const parsed = JSON.parse(data);
+          const content = parsed.choices?.[0]?.delta?.content || '';
+          if (content) {
+            event.sender.send('api:chunk', content);
+          }
+          if (parsed.usage) {
+            usage = parsed.usage;
+          }
+        } catch { /* skip parse errors */ }
+      }
+    }
+
+    reader.releaseLock();
+    event.sender.send('api:done', usage || {});
+  } catch (err: any) {
+    event.sender.send('api:error', { message: err.message || 'Network error' });
+  }
+});
+
 // Encryption IPC handlers
 ipcMain.handle('encrypt:encrypt', (_event, plaintext: string) => {
   const { encrypt } = require('../src/encryption/crypto-utils');
