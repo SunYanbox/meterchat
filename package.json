@@ -4,9 +4,9 @@
   "description": "Local chat desktop app with OpenAI-compatible API support",
   "main": "dist/electron/main.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && esbuild dist/src/renderer.js --bundle --outfile=dist/renderer.js --platform=browser --format=iife",
     "start": "npm run build && electron .",
-    "dev": "tsc && electron .",
+    "dev": "tsc && esbuild dist/src/renderer.js --bundle --outfile=dist/renderer.js --platform=browser --format=iife && electron .",
     "test": "jest",
     "clean": "rm -rf dist"
   },
@@ -20,6 +20,7 @@
     "@types/sql.js": "^1.4.9",
     "electron": "^33.4.11",
     "electron-builder": "^25.0.0",
+    "esbuild": "^0.28.0",
     "jest": "^29.7.0",
     "ts-jest": "^29.2.0",
     "typescript": "^5.7.0"
